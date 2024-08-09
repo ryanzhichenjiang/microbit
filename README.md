@@ -17,7 +17,7 @@ This is a Rust-based project for BBC micro:bit development, focusing on low-leve
 
 - Implements basic UART communication with 115200 baud rate
 - Echo functionality: receives and transmits back characters
-- Uses pins P0.24 (TX) and P0.25 (RX) for UART communication
+- Uses pins P0.02 (RX) and P0.03 (TX) for UART communication
 
 ## Setup
 
@@ -40,7 +40,7 @@ This is a Rust-based project for BBC micro:bit development, focusing on low-leve
 This will start the UART communication application with:
 - 115200 baud rate
 - Echo functionality enabled
-- Using pins P0.24 (TX) and P0.25 (RX)
+- Using pins P0.02 (RX) and P0.03 (TX)
 
 ## Development
 

@@ -16,13 +16,13 @@ use microbit::{
 fn main() -> ! {
     if let Some(p) = microbit::Peripherals::take() {
         /* Configure RX and TX pins accordingly */
-        p.P0.pin_cnf[24].write(|w| w.pull().pullup().dir().output());
-        p.P0.pin_cnf[25].write(|w| w.pull().disabled().dir().input());
+        p.P0.pin_cnf[3].write(|w| w.pull().pullup().dir().output());
+        p.P0.pin_cnf[2].write(|w| w.pull().disabled().dir().input());
 
         let uart0 = p.UART0;
         /* Tell UART which pins to use for sending and receiving */
-        uart0.psel.txd.write(|w| unsafe { w.bits(24) });
-        uart0.psel.rxd.write(|w| unsafe { w.bits(25) });
+        uart0.psel.txd.write(|w| unsafe { w.bits(3) });
+        uart0.psel.rxd.write(|w| unsafe { w.bits(2) });
 
         /* Set a typical baud rate of 115200 */
         uart0.baudrate.write(|w| w.baudrate().baud115200());
