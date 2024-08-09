@@ -1,0 +1,8 @@
+/target/
+**/*.orig
+**/*.rs.bk
+bloat_log*
+!.github
+!.cargo
+Cargo.lock
+.DS_Store
