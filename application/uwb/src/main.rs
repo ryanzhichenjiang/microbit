@@ -6,20 +6,23 @@ use panic_halt as _;
 
 use core::str;
 use cortex_m_rt::entry;
+use defmt::info;
 
-use microbit::{
-    hal::uarte,
-    hal::uarte::{Baudrate, Parity},
-};
+use microbit::{hal::{uarte, twim, gpio::Level}, Board};
+use microbit_cutebot::Cutebot;
 
 #[entry]
 fn main() -> ! {
-    if let Some(p) = microbit::Peripherals::take() {
-        /* Configure RX and TX pins accordingly */
-        p.P0.pin_cnf[3].write(|w| w.pull().pullup().dir().output());
-        p.P0.pin_cnf[2].write(|w| w.pull().disabled().dir().input());
+    if let Some(board) = Board::take() {
+        let i2c_pins = board.i2c_internal;
+        let mut i2c = twim::Twim::new(board.TWIM0, i2c_pins.into(), twim::Frequency::K100);
+        let mut cutebot = Cutebot::new(&mut i2c);
 
-        let uart0 = p.UART0;
+        /* Configure RX and TX pins accordingly */
+        board.edge.e01.into_push_pull_output(Level::High);
+        board.edge.e00.into_floating_input();
+
+        let uart0 = board.UART0;
         /* Tell UART which pins to use for sending and receiving */
         uart0.psel.txd.write(|w| unsafe { w.bits(3) });
         uart0.psel.rxd.write(|w| unsafe { w.bits(2) });
@@ -35,6 +38,18 @@ fn main() -> ! {
 
         /* Fire up receiving task */
         uart0.tasks_startrx.write(|w| unsafe { w.bits(1) });
+
+        /* Initialize motors with forward speed and check if successful */
+        match cutebot.motors(10, 10) {
+            Ok(_) => {
+                info!("Motors initialized successfully with forward speed");
+                let _ = write_uart0(&uart0, "Motors started moving forward\r\n");
+            }
+            Err(_) => {
+                info!("Failed to initialize motors");
+                let _ = write_uart0(&uart0, "Error: Failed to start motors\r\n");
+            }
+        }
 
         /* Endless loop */
         loop {
