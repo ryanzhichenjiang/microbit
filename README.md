@@ -8,6 +8,7 @@ This is a Rust-based project for BBC micro:bit development, focusing on low-leve
 ├── application/
 │   └── uwb/            # UART communication implementation
 ├── microbit-lib/       # Core library for micro:bit functionality
+├── microbit-cutebot/   # Cutebot robot control library
 └── memory.x           # Linker script for memory layout
 ```
 
@@ -18,6 +19,13 @@ This is a Rust-based project for BBC micro:bit development, focusing on low-leve
 - Implements basic UART communication with 115200 baud rate
 - Echo functionality: receives and transmits back characters
 - Uses pins P0.02 (RX) and P0.03 (TX) for UART communication
+
+### Cutebot Robot Control
+
+- Motor control functionality with variable speed settings
+- RGB LED control (left and right) with customizable colors
+- Uses internal I2C bus (pins P0.08 (SCL) and P0.16 (SDA)) for communication
+- Integrated with UART communication for status reporting
 
 ## Setup
 

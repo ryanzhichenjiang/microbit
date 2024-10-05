@@ -8,13 +8,14 @@ use core::str;
 use cortex_m_rt::entry;
 use defmt::info;
 
-use microbit::{hal::{uarte, twim, gpio::Level}, Board};
-use microbit_cutebot::Cutebot;
+use microbit::{hal::{uarte, twim, gpio::Level, Timer}, Board};
+use microbit_cutebot::{Cutebot, Rgb};
 
 #[entry]
 fn main() -> ! {
     if let Some(board) = Board::take() {
         let i2c_pins = board.i2c_internal;
+        let mut timer = Timer::new(board.TIMER0);
         let mut i2c = twim::Twim::new(board.TWIM0, i2c_pins.into(), twim::Frequency::K100);
         let mut cutebot = Cutebot::new(&mut i2c);
 
@@ -39,32 +40,59 @@ fn main() -> ! {
         /* Fire up receiving task */
         uart0.tasks_startrx.write(|w| unsafe { w.bits(1) });
 
-        /* Initialize motors with forward speed and check if successful */
-        match cutebot.motors(10, 10) {
+        /* Set RGB LEDs: left to red, right to blue */
+        match cutebot.rgb_left(Rgb::RED) {
             Ok(_) => {
-                info!("Motors initialized successfully with forward speed");
-                let _ = write_uart0(&uart0, "Motors started moving forward\r\n");
+                info!("Left RGB LED set to RED successfully");
+                let _ = write_uart0(&uart0, "Left RGB LED initialized\r\n");
             }
             Err(_) => {
-                info!("Failed to initialize motors");
-                let _ = write_uart0(&uart0, "Error: Failed to start motors\r\n");
+                info!("Failed to set left RGB LED");
+                let _ = write_uart0(&uart0, "Error: Failed to set left RGB LED\r\n");
             }
         }
 
+        match cutebot.rgb_right(Rgb::BLUE) {
+            Ok(_) => {
+                info!("Right RGB LED set to BLUE successfully");
+                let _ = write_uart0(&uart0, "Right RGB LED initialized\r\n");
+            }
+            Err(_) => {
+                info!("Failed to set right RGB LED");
+                let _ = write_uart0(&uart0, "Error: Failed to set right RGB LED\r\n");
+            }
+        }
+
+
+
         /* Endless loop */
         loop {
-            /* Busy wait for reception of data */
-            while uart0.events_rxdrdy.read().bits() == 0 {}
 
-            /* We're going to pick up the data soon, let's signal the buffer is already waiting for
-             * more data */
-            uart0.events_rxdrdy.write(|w| unsafe { w.bits(0) });
+            /* Initialize motors with forward speed and check if successful */
+            match cutebot.motors(20, 20) {
+                Ok(_) => {
+                    info!("Motors initialized successfully with forward speed");
+                    let _ = write_uart0(&uart0, "Motors started moving forward\r\n");
+                }
+                Err(_) => {
+                    info!("Failed to initialize motors");
+                    let _ = write_uart0(&uart0, "Error: Failed to start motors\r\n");
+                }
+            }            
+            // timer.delay_ms(1000_u32);
 
-            /* Read one 8bit value */
-            let c = uart0.rxd.read().bits() as u8;
+            // /* Busy wait for reception of data */
+            // while uart0.events_rxdrdy.read().bits() == 0 {}
 
-            /* What comes in must go out, we don't care what it is */
-            let _ = write_uart0(&uart0, unsafe { str::from_utf8_unchecked(&[c; 1]) });
+            // /* We're going to pick up the data soon, let's signal the buffer is already waiting for
+            //  * more data */
+            // uart0.events_rxdrdy.write(|w| unsafe { w.bits(0) });
+
+            // /* Read one 8bit value */
+            // let c = uart0.rxd.read().bits() as u8;
+
+            // /* What comes in must go out, we don't care what it is */
+            // let _ = write_uart0(&uart0, unsafe { str::from_utf8_unchecked(&[c; 1]) });
         }
     }
 
