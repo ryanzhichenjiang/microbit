@@ -65,34 +65,101 @@ fn main() -> ! {
 
 
 
+        // Buffer to store incoming UART data
+        let mut buffer = [0u8; 32];
+        let mut buffer_idx = 0;
+        
+        // Target distance and angle values
+        let target_distance = 150; // 150 cm
+        let target_angle = 0; // 0 degrees (straight ahead)
+        
+        // Tolerance values
+        let angle_tolerance = 2; // ±2 degrees
+        let distance_tolerance_percent = 10; // 10% of target distance
+        
+        /* Print initial status */
+        info!("Ready to receive distance and angle data");
+        info!("Format: D: XXXX, A: YYY");
+        
         /* Endless loop */
         loop {
-
-            /* Initialize motors with forward speed and check if successful */
-            match cutebot.motors(20, 20) {
-                Ok(_) => {
-                    info!("Motors initialized successfully with forward speed");
-                    let _ = write_uart0(&uart0, "Motors started moving forward\r\n");
+            // Check if there's data available to read
+            if uart0.events_rxdrdy.read().bits() != 0 {
+                // Reset the event
+                uart0.events_rxdrdy.write(|w| unsafe { w.bits(0) });
+                
+                // Read one byte
+                let c = uart0.rxd.read().bits() as u8;
+                
+                // Echo the character back
+                let _ = write_uart0(&uart0, unsafe { str::from_utf8_unchecked(&[c; 1]) });
+                
+                // Add to buffer if not full and not a newline
+                if c != b'\n' && buffer_idx < buffer.len() - 1 {
+                    buffer[buffer_idx] = c;
+                    buffer_idx += 1;
+                } else {
+                    // Null-terminate the buffer
+                    buffer[buffer_idx] = 0;
+                    
+                    // Process the complete line
+                    if buffer_idx > 0 {
+                        // Convert buffer to string slice for easier parsing
+                        if let Ok(data_str) = str::from_utf8(&buffer[0..buffer_idx]) {
+                            // Try to parse distance and angle from the data
+                            if let Some((distance, angle)) = parse_distance_angle(data_str) {
+                                // Log the parsed values
+                                info!("Received - Distance: {}, Angle: {}", distance, angle);
+                                
+                                // Calculate distance difference percentage
+                                let distance_diff_percent = if target_distance > 0 {
+                                    ((distance as i32 - target_distance as i32).abs() * 100) / target_distance as i32
+                                } else {
+                                    100 // If target is 0, any difference is 100%
+                                };
+                                
+                                // Calculate angle difference
+                                let angle_diff = (angle - target_angle).abs();
+                                
+                                // Determine motor speeds based on angle
+                                if angle_diff <= angle_tolerance && distance_diff_percent <= distance_tolerance_percent {
+                                    // We're at the target position, stop motors
+                                    match cutebot.motors(0, 0) {
+                                        Ok(_) => {
+                                            info!("Target reached! Motors stopped");
+                                            let _ = write_uart0(&uart0, "Target reached! Motors stopped\r\n");
+                                        }
+                                        Err(_) => {
+                                            info!("Failed to stop motors");
+                                            let _ = write_uart0(&uart0, "Error: Failed to stop motors\r\n");
+                                        }
+                                    }
+                                } else {
+                                    // We need to adjust position
+                                    // Calculate motor speeds based on angle
+                                    let (left_speed, right_speed) = calculate_motor_speeds(angle);
+                                    
+                                    // Apply motor speeds
+                                    match cutebot.motors(left_speed, right_speed) {
+                                        Ok(_) => {
+                                            info!("Motors adjusted - Left: {}, Right: {}", left_speed, right_speed);
+                                        }
+                                        Err(_) => {
+                                            info!("Failed to adjust motors");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Reset buffer for next line
+                    buffer_idx = 0;
                 }
-                Err(_) => {
-                    info!("Failed to initialize motors");
-                    let _ = write_uart0(&uart0, "Error: Failed to start motors\r\n");
-                }
-            }            
-            // timer.delay_ms(1000_u32);
-
-            // /* Busy wait for reception of data */
-            // while uart0.events_rxdrdy.read().bits() == 0 {}
-
-            // /* We're going to pick up the data soon, let's signal the buffer is already waiting for
-            //  * more data */
-            // uart0.events_rxdrdy.write(|w| unsafe { w.bits(0) });
-
-            // /* Read one 8bit value */
-            // let c = uart0.rxd.read().bits() as u8;
-
-            // /* What comes in must go out, we don't care what it is */
-            // let _ = write_uart0(&uart0, unsafe { str::from_utf8_unchecked(&[c; 1]) });
+            }
+            
+            // Small delay to prevent CPU hogging
+            // timer.delay_us(10000_u32);
         }
     }
 
@@ -119,4 +186,60 @@ fn write_uart0(uart0: &microbit::pac::UART0, s: &str) -> core::fmt::Result {
     /* Stop UART sender */
     uart0.tasks_stoptx.write(|w| unsafe { w.bits(1) });
     Ok(())
+}
+
+/// Parse distance and angle from a string in format "D: XXXX, A: YYY"
+/// Returns (distance, angle) as (u16, i16) if parsing is successful
+fn parse_distance_angle(data: &str) -> Option<(u16, i16)> {
+    // Look for distance pattern "D: XXXX"
+    let d_pos = data.find("D:")?
+        .checked_add(3)?; // Skip "D: "
+    
+    // Look for angle pattern "A: YYY"
+    let a_pos = data.find("A:")?
+        .checked_add(3)?; // Skip "A: "
+    
+    // Extract distance substring
+    let d_end = data[d_pos..].find(',').map_or(data.len(), |pos| d_pos + pos);
+    let d_str = data[d_pos..d_end].trim();
+    
+    // Extract angle substring
+    let a_end = data[a_pos..].find(',').map_or(data.len(), |pos| a_pos + pos);
+    let a_str = data[a_pos..a_end].trim();
+    
+    // Parse distance and angle as numbers
+    let distance = d_str.parse::<u16>().ok()?;
+    let angle = a_str.parse::<i16>().ok()?;
+    
+    Some((distance, angle))
+}
+
+/// Calculate motor speeds based on the angle
+/// Returns (left_speed, right_speed) as (i8, i8)
+fn calculate_motor_speeds(angle: i16) -> (i8, i8) {
+    // Base speed for forward movement
+    let base_speed = 20;
+    
+    // Calculate speed difference based on angle
+    // Positive angle means target is to the right, so right motor should be slower
+    // Negative angle means target is to the left, so left motor should be slower
+    let angle_factor = (angle as f32 / 45.0).clamp(-1.0, 1.0); // Normalize to -1.0 to 1.0
+    
+    // Calculate motor speeds
+    if angle > 0 {
+        // Target is to the right, slow down right motor
+        let right_factor = 1.0 - angle_factor.abs();
+        let left_speed = base_speed;
+        let right_speed = (base_speed as f32 * right_factor) as i8;
+        (left_speed, right_speed)
+    } else if angle < 0 {
+        // Target is to the left, slow down left motor
+        let left_factor = 1.0 - angle_factor.abs();
+        let left_speed = (base_speed as f32 * left_factor) as i8;
+        let right_speed = base_speed;
+        (left_speed, right_speed)
+    } else {
+        // Angle is 0, go straight
+        (base_speed, base_speed)
+    }
 }
